@@ -571,6 +571,9 @@ export default class Drawflow {
             var id_input = input_id.slice(5);
             var id_output = output_id.slice(5);
 
+            let outputClassName = this.getNodeFromId(id_output).class;
+            this.connection_ele.classList.add(`connection-${outputClassName}`);
+
             this.drawflow.drawflow[this.module].data[id_output].outputs[
               output_class
             ].connections.push({ node: id_input, output: input_class });
@@ -863,6 +866,7 @@ export default class Drawflow {
     this.precanvas.appendChild(connection);
     var id_output = ele.parentElement.parentElement.id.slice(5);
     var output_class = ele.classList[1];
+
     this.dispatch("connectionStart", {
       output_id: id_output,
       output_class: output_class,
@@ -962,6 +966,10 @@ export default class Drawflow {
           connection.classList.add("node_out_node-" + id_output);
           connection.classList.add(output_class);
           connection.classList.add(input_class);
+
+          let outputClassName = _this.getNodeFromId(id_output).class;
+          connection.classList.add(`connection-${outputClassName}`);
+
           connection.appendChild(path);
           this.precanvas.appendChild(connection);
           this.updateConnectionNodes("node-" + id_output);
