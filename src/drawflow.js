@@ -1001,8 +1001,6 @@ export default class Drawflow {
 
     const elemsOut = container.querySelectorAll(`.${idSearchOut}`);
 
-    console.log("elemsOut", elemsOut);
-
     Object.keys(elemsOut).map(function (item, index) {
       if (elemsOut[item].querySelector(".point") === null) {
         var elemtsearchId_out = container.querySelector(`#${id}`);
@@ -2526,7 +2524,6 @@ export default class Drawflow {
     if (this.connection_selected != null) {
       var listclass = this.connection_selected.parentElement.classList;
       this.connection_selected.parentElement.remove();
-      //console.log(listclass);
       var index_out = this.drawflow.drawflow[this.module].data[
         listclass[2].slice(14)
       ].outputs[listclass[3]].connections.findIndex(function (item, i) {
