@@ -1994,6 +1994,8 @@ export default class Drawflow {
     const outputs = document.createElement("div");
     outputs.classList.add("outputs");
 
+    let _this = this;
+
     Object.keys(dataNode.inputs).map(function (input_item, index) {
       const input = document.createElement("div");
       input.classList.add("input");
@@ -2024,7 +2026,11 @@ export default class Drawflow {
           dataNode.inputs[input_item].connections[output_item].input
         );
         connection.classList.add(input_item);
-        connection.classList.add(`connection-${dataNode.class}`);
+
+        let outputClassName = _this.getNodeFromId(
+          dataNode.inputs[input_item].connections[output_item].node
+        ).class;
+        connection.classList.add(`connection-${outputClassName}`);
 
         connection.appendChild(path);
         precanvas.appendChild(connection);
@@ -2035,6 +2041,8 @@ export default class Drawflow {
       const output = document.createElement("div");
       output.classList.add("output");
       output.classList.add("output_" + (x + 1));
+
+      output.classList.add(`connection-${dataNode.class}`);
       outputs.appendChild(output);
     }
 
