@@ -18,6 +18,7 @@ export default class Drawflow {
     this.connection = false;
     this.connection_ele = null;
     this.connection_selected = null;
+    this.connection_hover_node = null;
     this.canvas_x = 0;
     this.canvas_y = 0;
     this.pos_x = 0;
@@ -32,6 +33,8 @@ export default class Drawflow {
     this.draggable_inputs = true;
     this.useuuid = false;
     this.parent = parent;
+
+    this.GLOWING_CLASS_NAME = 'glowing';
 
     this.noderegister = {};
     this.render = render;
@@ -51,7 +54,6 @@ export default class Drawflow {
   }
 
   start() {
-    // console.info("Start Drawflow!!");
     this.container.classList.add("parent-drawflow");
     this.container.tabIndex = 0;
     this.precanvas = document.createElement("div");
@@ -173,7 +175,7 @@ export default class Drawflow {
       this.connection_selected.parentElement
         .querySelectorAll(".main-path")
         .forEach((item, i) => {
-          item.classList.remove("selected");
+          item.classList.remove(this.GLOWING_CLASS_NAME);
         });
     }
   }
@@ -182,12 +184,13 @@ export default class Drawflow {
     this.dispatch("click", e);
     if (this.editor_mode === "fixed") {
       //return false;
-      e.preventDefault();
+
       if (
         e.target.classList[0] === "parent-drawflow" ||
         e.target.classList[0] === "drawflow"
       ) {
         this.ele_selected = e.target.closest(".parent-drawflow");
+        e.preventDefault();
       } else {
         return false;
       }
@@ -375,6 +378,42 @@ export default class Drawflow {
 
     if (this.connection) {
       this.updateConnection(e_pos_x, e_pos_y);
+
+      // Check for node hover during connection drag
+      var elementAtPoint = document.elementFromPoint(e_pos_x, e_pos_y);
+      var hoveredNode = null;
+
+      if (elementAtPoint) {
+        // Find if we're hovering over a drawflow-node
+        if (elementAtPoint.classList.contains('drawflow-node')) {
+          hoveredNode = elementAtPoint;
+        } else {
+          var parentNode = elementAtPoint.closest('.drawflow-node');
+          if (parentNode) {
+            hoveredNode = parentNode;
+          }
+        }
+      }
+
+      // Update hover state
+      if (this.connection_hover_node !== hoveredNode) {
+        // Remove selection from previous hovered node
+        if (this.connection_hover_node) {
+          this.connection_hover_node.classList.remove(this.GLOWING_CLASS_NAME);
+        }
+
+        // Add selection to new hovered node (if it's not the source node)
+        if (hoveredNode && hoveredNode !== this.ele_selected.parentElement.parentElement) {
+          // Check if the node has at least one input
+          var nodeId = hoveredNode.id.slice(5);
+          var nodeData = this.getNodeFromId(nodeId);
+          if (nodeData && Object.keys(nodeData.inputs).length > 0) {
+            hoveredNode.classList.add(this.GLOWING_CLASS_NAME);
+          }
+        }
+
+        this.connection_hover_node = hoveredNode;
+      }
     }
     if (this.editor_selected) {
       x = this.canvas_x + -(this.pos_x - e_pos_x);
@@ -419,18 +458,18 @@ export default class Drawflow {
 
       var pos_x =
         this.pos_x *
-          (this.precanvas.clientWidth /
-            (this.precanvas.clientWidth * this.zoom)) -
+        (this.precanvas.clientWidth /
+          (this.precanvas.clientWidth * this.zoom)) -
         this.precanvas.getBoundingClientRect().x *
-          (this.precanvas.clientWidth /
-            (this.precanvas.clientWidth * this.zoom));
+        (this.precanvas.clientWidth /
+          (this.precanvas.clientWidth * this.zoom));
       var pos_y =
         this.pos_y *
-          (this.precanvas.clientHeight /
-            (this.precanvas.clientHeight * this.zoom)) -
+        (this.precanvas.clientHeight /
+          (this.precanvas.clientHeight * this.zoom)) -
         this.precanvas.getBoundingClientRect().y *
-          (this.precanvas.clientHeight /
-            (this.precanvas.clientHeight * this.zoom));
+        (this.precanvas.clientHeight /
+          (this.precanvas.clientHeight * this.zoom));
 
       this.ele_selected.setAttributeNS(null, "cx", pos_x);
       this.ele_selected.setAttributeNS(null, "cy", pos_y);
@@ -516,11 +555,19 @@ export default class Drawflow {
       this.editor_selected = false;
     }
     if (this.connection === true) {
+
+      // Clean up hover state
+      if (this.connection_hover_node) {
+        this.connection_hover_node.classList.remove(this.GLOWING_CLASS_NAME);
+        this.connection_hover_node = null;
+      }
+
       if (
         ele_last.classList[0] === "input" ||
         (this.force_first_input &&
           (ele_last.closest(".drawflow_content_node") != null ||
-            ele_last.classList[0] === "drawflow-node"))
+            ele_last.classList[0] === "drawflow-node")) ||
+        ele_last.closest(".drawflow-node") != null
       ) {
         if (
           this.force_first_input &&
@@ -541,6 +588,17 @@ export default class Drawflow {
           } else {
             var input_class = "input_1";
           }
+        } else if (ele_last.classList[0] !== "input" && ele_last.closest(".drawflow-node") != null) {
+          // Dropped on a node but not on an input - connect to first input
+          var targetNode = ele_last.closest(".drawflow-node");
+          var input_id = targetNode.id;
+          var nodeInputs = this.getNodeFromId(input_id.slice(5)).inputs;
+          if (Object.keys(nodeInputs).length === 0) {
+            var input_class = false;
+          } else {
+            // Get the first input
+            var input_class = Object.keys(nodeInputs)[0];
+          }
         } else {
           // Fix connection;
           var input_id = ele_last.parentElement.parentElement.id;
@@ -553,13 +611,13 @@ export default class Drawflow {
           if (
             this.container.querySelectorAll(
               ".connection.node_in_" +
-                input_id +
-                ".node_out_" +
-                output_id +
-                "." +
-                output_class +
-                "." +
-                input_class
+              input_id +
+              ".node_out_" +
+              output_id +
+              "." +
+              output_class +
+              "." +
+              input_class
             ).length === 0
           ) {
             // Conection no exist save connection
@@ -606,6 +664,12 @@ export default class Drawflow {
         this.connection_ele.remove();
         this.connection_ele = null;
       }
+
+      // Final cleanup of hover state
+      if (this.connection_hover_node) {
+        this.connection_hover_node.classList.remove(this.GLOWING_CLASS_NAME);
+        this.connection_hover_node = null;
+      }
     }
 
     this.drag = false;
@@ -638,19 +702,19 @@ export default class Drawflow {
       ) {
         deletebox.style.top =
           e.clientY *
-            (this.precanvas.clientHeight /
-              (this.precanvas.clientHeight * this.zoom)) -
+          (this.precanvas.clientHeight /
+            (this.precanvas.clientHeight * this.zoom)) -
           this.precanvas.getBoundingClientRect().y *
-            (this.precanvas.clientHeight /
-              (this.precanvas.clientHeight * this.zoom)) +
+          (this.precanvas.clientHeight /
+            (this.precanvas.clientHeight * this.zoom)) +
           "px";
         deletebox.style.left =
           e.clientX *
-            (this.precanvas.clientWidth /
-              (this.precanvas.clientWidth * this.zoom)) -
+          (this.precanvas.clientWidth /
+            (this.precanvas.clientWidth * this.zoom)) -
           this.precanvas.getBoundingClientRect().x *
-            (this.precanvas.clientWidth /
-              (this.precanvas.clientWidth * this.zoom)) +
+          (this.precanvas.clientWidth /
+            (this.precanvas.clientWidth * this.zoom)) +
           "px";
 
         this.precanvas.appendChild(deletebox);
@@ -888,26 +952,26 @@ export default class Drawflow {
       this.ele_selected.offsetWidth / 2 +
       (this.ele_selected.getBoundingClientRect().x -
         precanvas.getBoundingClientRect().x) *
-        precanvasWitdhZoom;
+      precanvasWitdhZoom;
     var line_y =
       this.ele_selected.offsetHeight / 2 +
       (this.ele_selected.getBoundingClientRect().y -
         precanvas.getBoundingClientRect().y) *
-        precanvasHeightZoom;
+      precanvasHeightZoom;
 
     var x =
       eX *
-        (this.precanvas.clientWidth /
-          (this.precanvas.clientWidth * this.zoom)) -
+      (this.precanvas.clientWidth /
+        (this.precanvas.clientWidth * this.zoom)) -
       this.precanvas.getBoundingClientRect().x *
-        (this.precanvas.clientWidth / (this.precanvas.clientWidth * this.zoom));
+      (this.precanvas.clientWidth / (this.precanvas.clientWidth * this.zoom));
     var y =
       eY *
-        (this.precanvas.clientHeight /
-          (this.precanvas.clientHeight * this.zoom)) -
+      (this.precanvas.clientHeight /
+        (this.precanvas.clientHeight * this.zoom)) -
       this.precanvas.getBoundingClientRect().y *
-        (this.precanvas.clientHeight /
-          (this.precanvas.clientHeight * this.zoom));
+      (this.precanvas.clientHeight /
+        (this.precanvas.clientHeight * this.zoom));
 
     var curvature = this.curvature;
     var lineCurve = this.createCurvature(
@@ -1024,12 +1088,12 @@ export default class Drawflow {
           elemtsearch.offsetWidth / 2 +
           (elemtsearch.getBoundingClientRect().x -
             precanvas.getBoundingClientRect().x) *
-            precanvasWitdhZoom;
+          precanvasWitdhZoom;
         var eY =
           elemtsearch.offsetHeight / 2 +
           (elemtsearch.getBoundingClientRect().y -
             precanvas.getBoundingClientRect().y) *
-            precanvasHeightZoom;
+          precanvasHeightZoom;
 
         var elemtsearchOut = elemtsearchId_out.querySelectorAll(
           "." + elemsOut[item].classList[3]
@@ -1039,12 +1103,12 @@ export default class Drawflow {
           elemtsearchOut.offsetWidth / 2 +
           (elemtsearchOut.getBoundingClientRect().x -
             precanvas.getBoundingClientRect().x) *
-            precanvasWitdhZoom;
+          precanvasWitdhZoom;
         var line_y =
           elemtsearchOut.offsetHeight / 2 +
           (elemtsearchOut.getBoundingClientRect().y -
             precanvas.getBoundingClientRect().y) *
-            precanvasHeightZoom;
+          precanvasHeightZoom;
 
         var x = eX;
         var y = eY;
@@ -1070,12 +1134,12 @@ export default class Drawflow {
             var eX =
               (elemtsearch.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                precanvasWitdhZoom +
+              precanvasWitdhZoom +
               rerouteWidth;
             var eY =
               (elemtsearch.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                precanvasHeightZoom +
+              precanvasHeightZoom +
               rerouteWidth;
 
             var elemtsearchOut = elemtsearchId_out.querySelectorAll(
@@ -1085,12 +1149,12 @@ export default class Drawflow {
               elemtsearchOut.offsetWidth / 2 +
               (elemtsearchOut.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                precanvasWitdhZoom;
+              precanvasWitdhZoom;
             var line_y =
               elemtsearchOut.offsetHeight / 2 +
               (elemtsearchOut.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                precanvasHeightZoom;
+              precanvasHeightZoom;
             var x = eX;
             var y = eY;
 
@@ -1122,22 +1186,22 @@ export default class Drawflow {
               elemtsearchIn.offsetWidth / 2 +
               (elemtsearchIn.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                precanvasWitdhZoom;
+              precanvasWitdhZoom;
             var eY =
               elemtsearchIn.offsetHeight / 2 +
               (elemtsearchIn.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                precanvasHeightZoom;
+              precanvasHeightZoom;
 
             var line_x =
               (elemtsearchId_out.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                precanvasWitdhZoom +
+              precanvasWitdhZoom +
               rerouteWidth;
             var line_y =
               (elemtsearchId_out.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                precanvasHeightZoom +
+              precanvasHeightZoom +
               rerouteWidth;
             var x = eX;
             var y = eY;
@@ -1159,12 +1223,12 @@ export default class Drawflow {
             var eX =
               (elemtsearch.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                precanvasWitdhZoom +
+              precanvasWitdhZoom +
               rerouteWidth;
             var eY =
               (elemtsearch.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                precanvasHeightZoom +
+              precanvasHeightZoom +
               rerouteWidth;
 
             var elemtsearchOut = elemtsearchId_out.querySelectorAll(
@@ -1174,12 +1238,12 @@ export default class Drawflow {
               elemtsearchOut.offsetWidth / 2 +
               (elemtsearchOut.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                precanvasWitdhZoom;
+              precanvasWitdhZoom;
             var line_y =
               elemtsearchOut.offsetHeight / 2 +
               (elemtsearchOut.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                precanvasHeightZoom;
+              precanvasHeightZoom;
 
             var x = eX;
             var y = eY;
@@ -1202,22 +1266,22 @@ export default class Drawflow {
             var eX =
               (elemtsearch.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                precanvasWitdhZoom +
+              precanvasWitdhZoom +
               rerouteWidth;
             var eY =
               (elemtsearch.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                precanvasHeightZoom +
+              precanvasHeightZoom +
               rerouteWidth;
             var line_x =
               (elemtsearchId_out.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                precanvasWitdhZoom +
+              precanvasWitdhZoom +
               rerouteWidth;
             var line_y =
               (elemtsearchId_out.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                precanvasHeightZoom +
+              precanvasHeightZoom +
               rerouteWidth;
             var x = eX;
             var y = eY;
@@ -1251,21 +1315,21 @@ export default class Drawflow {
               elemtsearchIn.offsetWidth / 2 +
               (elemtsearchIn.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                precanvasWitdhZoom;
+              precanvasWitdhZoom;
             var eY =
               elemtsearchIn.offsetHeight / 2 +
               (elemtsearchIn.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                precanvasHeightZoom;
+              precanvasHeightZoom;
             var line_x =
               (elemtsearchId_out.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                (precanvas.clientWidth / (precanvas.clientWidth * zoom)) +
+              (precanvas.clientWidth / (precanvas.clientWidth * zoom)) +
               rerouteWidth;
             var line_y =
               (elemtsearchId_out.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                (precanvas.clientHeight / (precanvas.clientHeight * zoom)) +
+              (precanvas.clientHeight / (precanvas.clientHeight * zoom)) +
               rerouteWidth;
             var x = eX;
             var y = eY;
@@ -1287,22 +1351,22 @@ export default class Drawflow {
             var eX =
               (elemtsearch.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                (precanvas.clientWidth / (precanvas.clientWidth * zoom)) +
+              (precanvas.clientWidth / (precanvas.clientWidth * zoom)) +
               rerouteWidth;
             var eY =
               (elemtsearch.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                (precanvas.clientHeight / (precanvas.clientHeight * zoom)) +
+              (precanvas.clientHeight / (precanvas.clientHeight * zoom)) +
               rerouteWidth;
             var line_x =
               (elemtsearchId_out.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                (precanvas.clientWidth / (precanvas.clientWidth * zoom)) +
+              (precanvas.clientWidth / (precanvas.clientWidth * zoom)) +
               rerouteWidth;
             var line_y =
               (elemtsearchId_out.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                (precanvas.clientHeight / (precanvas.clientHeight * zoom)) +
+              (precanvas.clientHeight / (precanvas.clientHeight * zoom)) +
               rerouteWidth;
             var x = eX;
             var y = eY;
@@ -1344,12 +1408,12 @@ export default class Drawflow {
           elemtsearch.offsetWidth / 2 +
           (elemtsearch.getBoundingClientRect().x -
             precanvas.getBoundingClientRect().x) *
-            precanvasWitdhZoom;
+          precanvasWitdhZoom;
         var line_y =
           elemtsearch.offsetHeight / 2 +
           (elemtsearch.getBoundingClientRect().y -
             precanvas.getBoundingClientRect().y) *
-            precanvasHeightZoom;
+          precanvasHeightZoom;
 
         var elemtsearchId_in = elemtsearchId_in.querySelectorAll(
           "." + elems[item].classList[4]
@@ -1358,12 +1422,12 @@ export default class Drawflow {
           elemtsearchId_in.offsetWidth / 2 +
           (elemtsearchId_in.getBoundingClientRect().x -
             precanvas.getBoundingClientRect().x) *
-            precanvasWitdhZoom;
+          precanvasWitdhZoom;
         var y =
           elemtsearchId_in.offsetHeight / 2 +
           (elemtsearchId_in.getBoundingClientRect().y -
             precanvas.getBoundingClientRect().y) *
-            precanvasHeightZoom;
+          precanvasHeightZoom;
 
         const lineCurve = createCurvature(
           line_x,
@@ -1386,12 +1450,12 @@ export default class Drawflow {
             var line_x =
               (elemtsearch.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                precanvasWitdhZoom +
+              precanvasWitdhZoom +
               rerouteWidth;
             var line_y =
               (elemtsearch.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                precanvasHeightZoom +
+              precanvasHeightZoom +
               rerouteWidth;
 
             var elemtsearchIn = elemtsearchId_out.querySelectorAll(
@@ -1401,12 +1465,12 @@ export default class Drawflow {
               elemtsearchIn.offsetWidth / 2 +
               (elemtsearchIn.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                precanvasWitdhZoom;
+              precanvasWitdhZoom;
             var eY =
               elemtsearchIn.offsetHeight / 2 +
               (elemtsearchIn.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                precanvasHeightZoom;
+              precanvasHeightZoom;
 
             var x = eX;
             var y = eY;
@@ -1439,22 +1503,22 @@ export default class Drawflow {
               elemtsearchOut.offsetWidth / 2 +
               (elemtsearchOut.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                precanvasWitdhZoom;
+              precanvasWitdhZoom;
             var line_y =
               elemtsearchOut.offsetHeight / 2 +
               (elemtsearchOut.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                precanvasHeightZoom;
+              precanvasHeightZoom;
 
             var eX =
               (elemtsearchId_out.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                precanvasWitdhZoom +
+              precanvasWitdhZoom +
               rerouteWidth;
             var eY =
               (elemtsearchId_out.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                precanvasHeightZoom +
+              precanvasHeightZoom +
               rerouteWidth;
             var x = eX;
             var y = eY;
@@ -1487,22 +1551,22 @@ export default class Drawflow {
               elemtsearchOut.offsetWidth / 2 +
               (elemtsearchOut.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                precanvasWitdhZoom;
+              precanvasWitdhZoom;
             var line_y =
               elemtsearchOut.offsetHeight / 2 +
               (elemtsearchOut.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                precanvasHeightZoom;
+              precanvasHeightZoom;
 
             var eX =
               (elemtsearchId_out.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                precanvasWitdhZoom +
+              precanvasWitdhZoom +
               rerouteWidth;
             var eY =
               (elemtsearchId_out.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                precanvasHeightZoom +
+              precanvasHeightZoom +
               rerouteWidth;
             var x = eX;
             var y = eY;
@@ -1525,22 +1589,22 @@ export default class Drawflow {
             var eX =
               (elemtsearch.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                precanvasWitdhZoom +
+              precanvasWitdhZoom +
               rerouteWidth;
             var eY =
               (elemtsearch.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                precanvasHeightZoom +
+              precanvasHeightZoom +
               rerouteWidth;
             var line_x =
               (elemtsearchId_out.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                precanvasWitdhZoom +
+              precanvasWitdhZoom +
               rerouteWidth;
             var line_y =
               (elemtsearchId_out.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                precanvasHeightZoom +
+              precanvasHeightZoom +
               rerouteWidth;
             var x = eX;
             var y = eY;
@@ -1574,22 +1638,22 @@ export default class Drawflow {
               elemtsearchIn.offsetWidth / 2 +
               (elemtsearchIn.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                precanvasWitdhZoom;
+              precanvasWitdhZoom;
             var eY =
               elemtsearchIn.offsetHeight / 2 +
               (elemtsearchIn.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                precanvasHeightZoom;
+              precanvasHeightZoom;
 
             var line_x =
               (elemtsearchId_out.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                precanvasWitdhZoom +
+              precanvasWitdhZoom +
               rerouteWidth;
             var line_y =
               (elemtsearchId_out.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                precanvasHeightZoom +
+              precanvasHeightZoom +
               rerouteWidth;
             var x = eX;
             var y = eY;
@@ -1611,22 +1675,22 @@ export default class Drawflow {
             var eX =
               (elemtsearch.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                precanvasWitdhZoom +
+              precanvasWitdhZoom +
               rerouteWidth;
             var eY =
               (elemtsearch.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                precanvasHeightZoom +
+              precanvasHeightZoom +
               rerouteWidth;
             var line_x =
               (elemtsearchId_out.getBoundingClientRect().x -
                 precanvas.getBoundingClientRect().x) *
-                precanvasWitdhZoom +
+              precanvasWitdhZoom +
               rerouteWidth;
             var line_y =
               (elemtsearchId_out.getBoundingClientRect().y -
                 precanvas.getBoundingClientRect().y) *
-                precanvasHeightZoom +
+              precanvasHeightZoom +
               rerouteWidth;
             var x = eX;
             var y = eY;
@@ -1680,17 +1744,17 @@ export default class Drawflow {
     point.classList.add("point");
     var pos_x =
       this.pos_x *
-        (this.precanvas.clientWidth /
-          (this.precanvas.clientWidth * this.zoom)) -
+      (this.precanvas.clientWidth /
+        (this.precanvas.clientWidth * this.zoom)) -
       this.precanvas.getBoundingClientRect().x *
-        (this.precanvas.clientWidth / (this.precanvas.clientWidth * this.zoom));
+      (this.precanvas.clientWidth / (this.precanvas.clientWidth * this.zoom));
     var pos_y =
       this.pos_y *
-        (this.precanvas.clientHeight /
-          (this.precanvas.clientHeight * this.zoom)) -
+      (this.precanvas.clientHeight /
+        (this.precanvas.clientHeight * this.zoom)) -
       this.precanvas.getBoundingClientRect().y *
-        (this.precanvas.clientHeight /
-          (this.precanvas.clientHeight * this.zoom));
+      (this.precanvas.clientHeight /
+        (this.precanvas.clientHeight * this.zoom));
 
     point.setAttributeNS(null, "cx", pos_x);
     point.setAttributeNS(null, "cy", pos_y);
@@ -2028,7 +2092,7 @@ export default class Drawflow {
         connection.classList.add("node_in_node-" + dataNode.id);
         connection.classList.add(
           "node_out_node-" +
-            dataNode.inputs[input_item].connections[output_item].node
+          dataNode.inputs[input_item].connections[output_item].node
         );
         connection.classList.add(
           dataNode.inputs[input_item].connections[output_item].input
@@ -2153,13 +2217,13 @@ export default class Drawflow {
               dataNode.outputs[output_item].connections[input_item].output;
             const ele = container.querySelector(
               ".connection.node_in_node-" +
-                input_id +
-                ".node_out_node-" +
-                dataNode.id +
-                "." +
-                output_item +
-                "." +
-                input_class
+              input_id +
+              ".node_out_node-" +
+              dataNode.id +
+              "." +
+              output_item +
+              "." +
+              input_class
             );
 
             if (reroute_fix_curvature) {
@@ -2382,13 +2446,13 @@ export default class Drawflow {
             if (this.module === moduleName) {
               const ele = this.container.querySelector(
                 ".connection.node_in_node-" +
-                  id +
-                  ".node_out_node-" +
-                  itemx.node +
-                  "." +
-                  itemx.input +
-                  ".input_" +
-                  output_id
+                id +
+                ".node_out_node-" +
+                itemx.node +
+                "." +
+                itemx.input +
+                ".input_" +
+                output_id
               );
               ele.classList.remove("input_" + output_id);
               ele.classList.add("input_" + (output_id - 1));
@@ -2489,13 +2553,13 @@ export default class Drawflow {
             if (this.module === moduleName) {
               const ele = this.container.querySelector(
                 ".connection.node_in_node-" +
-                  itemx.node +
-                  ".node_out_node-" +
-                  id +
-                  ".output_" +
-                  input_id +
-                  "." +
-                  itemx.output
+                itemx.node +
+                ".node_out_node-" +
+                id +
+                ".output_" +
+                input_id +
+                "." +
+                itemx.output
               );
               ele.classList.remove("output_" + input_id);
               ele.classList.remove(itemx.output);
@@ -2589,13 +2653,13 @@ export default class Drawflow {
           this.container
             .querySelector(
               ".connection.node_in_node-" +
-                id_input +
-                ".node_out_node-" +
-                id_output +
-                "." +
-                output_class +
-                "." +
-                input_class
+              id_input +
+              ".node_out_node-" +
+              id_output +
+              "." +
+              output_class +
+              "." +
+              input_class
             )
             .remove();
         }
